@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# SQLite runtime DBs (schema is in schema.sql; rebuild via bootstrap)
+*.db
+*.db-shm
+*.db-wal
+muwatta_source.db
+
+# Immutable original PDFs — NEVER commit
+storage/originals/
+*.pdf
+
+# Extracted page images and OCR output (regenerable)
+storage/page_images/
+storage/ocr/
+
+# Tesseract language data (download separately; see README)
+tessdata/
+*.traineddata
+
+# Logs and temp
+*.log
+integrity_scan/
+integrity_run*.log
+integrity_log.txt
+/tmp/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Old backups
+app/viewer_old.py

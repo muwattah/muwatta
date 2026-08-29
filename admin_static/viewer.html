@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Source Viewer — الموطأ (Bashshār 1417/1997)</title>
+<style>
+:root {
+  --green:#0b4f36; --cream:#f7f3e8; --gold:#c9a227;
+  --border:#d4cbb8; --danger:#9b1c1c; --warn:#8a6d00; --ok:#1b5e20;
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family: system-ui, sans-serif; background:var(--cream); color:#1a1a1a; }
+header {
+  background:var(--green); color:#fff; padding:10px 16px;
+  display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;
+}
+header h1 { margin:0; font-size:1.15rem; font-weight:600; }
+.badge { background:var(--gold); color:#111; padding:2px 10px; border-radius:999px; font-size:0.72rem; font-weight:700; }
+.nav { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.nav input, .nav button { padding:6px 10px; border-radius:6px; border:1px solid #ccc; font-size:0.9rem; }
+.nav button { background:var(--gold); border:none; cursor:pointer; font-weight:600; }
+.nav button.secondary { background:#fff; color:var(--green); }
+main { display:grid; grid-template-columns: 1.1fr 1fr; gap:0; height:calc(100vh - 58px); }
+.pane { overflow:auto; padding:12px 14px; border-left:1px solid var(--border); background:#fff; }
+.pane.scan { background:#e8e2d4; }
+.pane h2 { margin:0 0 8px; font-size:1rem; color:var(--green); }
+.scan-toolbar { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; align-items:center; }
+.scan-toolbar button { padding:4px 10px; cursor:pointer; }
+#scanImg { max-width:100%; height:auto; border:1px solid #bbb; background:#fff; transform-origin:top center; }
+.meta-line { font-size:0.85rem; color:#444; margin-bottom:8px; }
+.raw-box {
+  background:#faf8f2; border:2px dashed #c4b89a; border-radius:8px;
+  padding:10px; font-family: "Amiri", "Traditional Arabic", serif;
+  font-size:1.05rem; line-height:1.9; white-space:pre-wrap; direction:rtl;
+  max-height:280px; overflow:auto;
+}
+.label-raw {
+  display:inline-block; background:#fff3cd; color:var(--warn);
+  font-size:0.75rem; font-weight:700; padding:2px 8px; border-radius:4px; margin-bottom:6px;
+}
+.unit {
+  border:1px solid var(--border); border-radius:8px; padding:10px; margin:10px 0;
+  background:#fffcf6;
+}
+.unit.approved { border-color:#81c784; background:#f1f8e9; }
+.unit.rejected { border-color:#e57373; background:#ffebee; opacity:0.85; }
+.unit.verified { border-color:#64b5f6; background:#e3f2fd; }
+.unit-head { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:6px; font-size:0.82rem; }
+.status { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:600; }
+.st-needs_review { background:#fff3cd; color:#856404; }
+.st-verified { background:#bbdefb; color:#0d47a1; }
+.st-approved { background:#c8e6c9; color:#1b5e20; }
+.st-rejected { background:#ffcdd2; color:#b71c1c; }
+.st-published { background:#a5d6a7; color:#1b5e20; }
+.st-imported, .st-extracted { background:#eceff1; }
+textarea.verified {
+  width:100%; min-height:90px; direction:rtl; font-family:"Amiri","Traditional Arabic",serif;
+  font-size:1.05rem; line-height:1.8; padding:8px; border:1px solid #ccc; border-radius:6px;
+}
+.actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.actions button {
+  padding:5px 10px; border:none; border-radius:5px; cursor:pointer; font-size:0.82rem; font-weight:600;
+}
+.btn-ok { background:var(--ok); color:#fff; }
+.btn-warn { background:#f9a825; color:#111; }
+.btn-danger { background:var(--danger); color:#fff; }
+.btn-neutral { background:#546e7a; color:#fff; }
+.btn-ghost { background:#eee; color:#333; }
+.warn {
+  background:#fff8e1; border:1px solid #ffe082; color:#6d4c00;
+  padding:8px 10px; border-radius:6px; font-size:0.85rem; margin:8px 0;
+}
+.section { margin-top:14px; padding-top:10px; border-top:1px solid var(--border); }
+.section h3 { margin:0 0 8px; font-size:0.95rem; }
+input, select { padding:5px 8px; border:1px solid #ccc; border-radius:4px; }
+.form-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0; font-size:0.85rem; }
+#toast {
+  position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+  background:#222; color:#fff; padding:10px 18px; border-radius:8px;
+  display:none; z-index:99; font-size:0.9rem;
+}
+@media (max-width:1000px) {
+  main { grid-template-columns:1fr; height:auto; }
+  .pane { max-height:70vh; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;gap:10px;align-items:center">
+    <h1>الموطأ — Source Viewer</h1>
+    <span class="badge">SCAN = AUTHORITY · NO AI CONTENT · published=0</span>
+  </div>
+  <div class="nav">
+    <label>Vol <input type="number" id="vol" value="1" min="1" max="2" style="width:52px"/></label>
+    <label>PDF <input type="number" id="pdf" value="33" min="1" style="width:70px"/></label>
+    <button onclick="loadPage()">عرض الصفحة</button>
+    <button class="secondary" onclick="prevPage()">←</button>
+    <button class="secondary" onclick="nextPage()">→</button>
+    <button class="secondary" onclick="showList()">قائمة OCR</button>
+  </div>
+</header>
+<main>
+  <div class="pane scan">
+    <h2>المسح الأصلي (Scan)</h2>
+    <div class="scan-toolbar">
+      <button onclick="zoom(1.2)">+</button>
+      <button onclick="zoom(0.8)">−</button>
+      <button onclick="zoom(1)">100%</button>
+      <span id="scanMeta" class="meta-line"></span>
+    </div>
+    <div id="scanWrap"><p class="warn">اختر صفحة للعرض</p></div>
+  </div>
+  <div class="pane" id="rightPane">
+    <h2>المراجعة (Review)</h2>
+    <p class="warn">OCR خام فقط — ليست نصًا محققًا. قارن دائمًا بالمسح.</p>
+    <div id="reviewContent"></div>
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+let zoomLevel = 1;
+let current = { vol:1, pdf:33 };
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 2800);
+}
+function zoom(f) {
+  if (f === 1) zoomLevel = 1; else zoomLevel *= f;
+  const img = document.getElementById("scanImg");
+  if (img) img.style.transform = "scale(" + zoomLevel + ")";
+}
+function prevPage() {
+  document.getElementById("pdf").value = Math.max(1, (+document.getElementById("pdf").value) - 1);
+  loadPage();
+}
+function nextPage() {
+  document.getElementById("pdf").value = (+document.getElementById("pdf").value) + 1;
+  loadPage();
+}
+function escapeHtml(s) {
+  return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function stClass(s) { return "status st-" + (s || "needs_review"); }
+
+async function loadPage() {
+  const vol = +document.getElementById("vol").value;
+  const pdf = +document.getElementById("pdf").value;
+  current = { vol, pdf };
+  zoomLevel = 1;
+  document.getElementById("scanWrap").innerHTML = "<p>…</p>";
+  document.getElementById("reviewContent").innerHTML = "<p>…</p>";
+  const r = await fetch("/api/review/page?volume=" + vol + "&pdf_page=" + pdf);
+  if (!r.ok) {
+    document.getElementById("reviewContent").innerHTML = "<p class=warn>Error " + r.status + "</p>";
+    return;
+  }
+  const data = await r.json();
+  document.getElementById("scanMeta").textContent =
+    "Vol " + data.volume_number + " · PDF " + data.pdf_page_number +
+    " · Printed " + (data.printed_page_number ?? "—") + " (" + data.printed_page_status + ") · " + data.blank_status;
+  document.getElementById("scanWrap").innerHTML =
+    "<img id=scanImg src=/api/page-image?volume=" + vol + "&pdf_page=" + pdf + "&t=" + Date.now() + " alt=scan/>";
+  renderReview(data);
+}
+
+function renderReview(data) {
+  const ocr = data.ocr;
+  let html = "";
+  html += "<div class=meta-line>status: <span class=\"" + stClass(data.verification_status) + "\">" + data.verification_status +
+    "</span> · ocr: " + data.ocr_status + " · conf: " +
+    (ocr && ocr.ocr_confidence != null ? ocr.ocr_confidence.toFixed(1) : "—") + "</div>";
+  html += "<div class=label-raw>RAW OCR — ليس نصًا محققًا</div>";
+  if (ocr && ocr.ocr_output_raw) {
+    html += "<div class=raw-box>" + escapeHtml(ocr.ocr_output_raw) + "</div>";
+    html += "<div class=meta-line>engine: " + ocr.ocr_engine + " / " + ocr.ocr_model + " · " + ocr.ocr_timestamp + "</div>";
+  } else {
+    html += "<p class=warn>لا يوجد OCR لهذه الصفحة.</p>";
+  }
+  html += "<div class=section><h3>Text units (" + (data.text_units||[]).length + ")</h3>";
+  if (!data.text_units || !data.text_units.length) {
+    html += "<p class=warn>لا وحدات نص. يمكنك إنشاء وحدة من المسح.</p>";
+  }
+  for (const u of (data.text_units || [])) {
+    html += renderUnit(u, data);
+  }
+  html += "</div>";
+
+  html += "<div class=section><h3>إنشاء وحدة نص من المسح</h3>";
+  html += "<textarea class=verified id=newVerified placeholder=\"النص العربي من المسح…\"></textarea>";
+  html += "<div class=form-row><label>type <select id=newType>";
+  for (const t of ["needs_review","hadith","athar","qawl_malik","other"]) {
+    html += "<option value=" + t + ">" + t + "</option>";
+  }
+  html += "</select></label>";
+  html += "<label>hadith# <input id=newNum style=width:80px placeholder=NULL></label>";
+  html += "<label>book <select id=newBook><option value=\"\">—</option>";
+  for (const b of (data.all_books||[])) {
+    html += "<option value=\"" + b.book_id + "\">" + escapeHtml(b.arabic_title||"") + "</option>";
+  }
+  html += "</select></label></div>";
+  html += "<div class=actions><button class=btn-ok onclick=createFromScan()>إنشاء + verified</button></div></div>";
+
+  html += "<div class=section><h3>Kitāb / Bāb (من المسح فقط)</h3>";
+  html += "<div class=form-row><input id=bookTitle placeholder=\"عنوان الكتاب كما في المسح\" style=\"flex:1;min-width:160px\">";
+  html += "<input id=bookOrder type=number value=1 style=width:60px>";
+  html += "<button class=btn-neutral onclick=createBook()>+ كتاب</button></div>";
+  html += "<div class=form-row><select id=chBook><option value=\"\">اختر كتابًا</option>";
+  for (const b of (data.all_books||[])) {
+    html += "<option value=\"" + b.book_id + "\">" + escapeHtml(b.arabic_title||"") + "</option>";
+  }
+  html += "</select>";
+  html += "<input id=chTitle placeholder=\"عنوان الباب كما في المسح\" style=\"flex:1;min-width:140px\">";
+  html += "<input id=chOrder type=number value=1 style=width:60px>";
+  html += "<button class=btn-neutral onclick=createChapter()>+ باب</button></div>";
+  html += "<ul style=font-size:0.85rem>";
+  for (const b of (data.all_books||[])) {
+    html += "<li>[" + b.book_order + "] " + escapeHtml(b.arabic_title||"") +
+      " <span class=\"" + stClass(b.verification_status) + "\">" + b.verification_status + "</span></li>";
+  }
+  html += "</ul></div>";
+
+  if (data.editorial_notes && data.editorial_notes.length) {
+    html += "<div class=section><h3>Editorial / muḥaqqiq (" + data.editorial_notes.length + ")</h3>";
+    html += "<p class=warn>ليست من نص مالك.</p>";
+    for (const n of data.editorial_notes) {
+      html += "<div class=unit><div class=unit-head><span class=\"" + stClass(n.verification_status) + "\">" +
+        n.verification_status + "</span> " + n.note_type + "</div>";
+      html += "<div class=raw-box style=max-height:120px>" + escapeHtml((n.arabic_text_raw||"").slice(0,500)) + "</div></div>";
+    }
+    html += "</div>";
+  }
+  document.getElementById("reviewContent").innerHTML = html;
+}
+
+function renderUnit(u, data) {
+  const pages = (u.source_pages||[]).map(p => "p" + p.pdf_page_number).join(", ") || ("p" + u.pdf_page);
+  let html = "<div class=\"unit " + (u.verification_status||"") + "\" id=unit-" + u.text_id + ">";
+  html += "<div class=unit-head>";
+  html += "<span class=\"" + stClass(u.verification_status) + "\">" + u.verification_status + "</span>";
+  html += "<span>type: <b>" + u.text_type + "</b></span>";
+  html += "<span>hadith#: " + (u.hadith_number ?? "NULL") + "</span>";
+  html += "<span>pages: " + pages + "</span>";
+  if (u.published) html += "<span class=\"status st-published\">PUBLISHED</span>";
+  html += "</div>";
+  html += "<div class=label-raw>RAW (OCR)</div>";
+  html += "<div class=raw-box style=\"max-height:100px;font-size:0.95rem\">" + escapeHtml((u.arabic_text_raw||"").slice(0,400)) + "</div>";
+  html += "<div class=label-raw style=\"background:#e8f5e9;color:#1b5e20;margin-top:8px\">VERIFIED (human only)</div>";
+  html += "<textarea class=verified id=ver-" + u.text_id + ">" + escapeHtml(u.arabic_text_verified||"") + "</textarea>";
+  html += "<div class=form-row><label>type <select id=type-" + u.text_id + ">";
+  for (const t of ["needs_review","hadith","athar","qawl_malik","other","heading"]) {
+    html += "<option value=" + t + (u.text_type===t?" selected":"") + ">" + t + "</option>";
+  }
+  html += "</select></label>";
+  html += "<label>hadith# <input id=num-" + u.text_id + " value=\"" + (u.hadith_number??"") + "\" style=width:70px></label>";
+  html += "<label>book <select id=book-" + u.text_id + "><option value=\"\">—</option>";
+  for (const b of (data.all_books||[])) {
+    html += "<option value=\"" + b.book_id + "\"" + (u.book_id===b.book_id?" selected":"") + ">" + escapeHtml(b.arabic_title||"") + "</option>";
+  }
+  html += "</select></label></div>";
+  html += "<div class=actions>";
+  html += "<button class=btn-ok onclick=\"saveVerified('" + u.text_id + "')\">حفظ verified</button>";
+  html += "<button class=btn-ok onclick=\"doApprove('" + u.text_id + "')\">Approve</button>";
+  html += "<button class=btn-danger onclick=\"doReject('" + u.text_id + "')\">Reject</button>";
+  html += "<button class=btn-warn onclick=\"doNeedsReview('" + u.text_id + "')\">needs_review</button>";
+  html += "<button class=btn-neutral onclick=\"saveMeta('" + u.text_id + "')\">حفظ meta</button>";
+  html += "<button class=btn-ghost onclick=\"doPublish('" + u.text_id + "')\">Publish gate</button>";
+  html += "<button class=btn-ghost onclick=\"showAudit('" + u.text_id + "')\">Audit</button>";
+  html += "</div></div>";
+  return html;
+}
+
+async function saveVerified(id) {
+  const text = document.getElementById("ver-" + id).value;
+  const r = await fetch("/api/review/set-verified", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text_id:id, verified_arabic:text, reason:"Viewer: human from scan"})
+  });
+  const j = await r.json();
+  if (!r.ok) { toast("Error: " + (j.detail||JSON.stringify(j))); return; }
+  toast("verified saved"); loadPage();
+}
+async function doApprove(id) {
+  const r = await fetch("/api/review/approve", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text_id:id})
+  });
+  const j = await r.json();
+  if (!r.ok) { toast("Error: " + (j.detail||JSON.stringify(j))); return; }
+  toast("APPROVED (not published)"); loadPage();
+}
+async function doReject(id) {
+  const reason = prompt("rejection reason:");
+  if (!reason) return;
+  const r = await fetch("/api/review/reject", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text_id:id, reason:reason})
+  });
+  if (!r.ok) { const j=await r.json(); toast("Error: "+(j.detail||"")); return; }
+  toast("rejected"); loadPage();
+}
+async function doNeedsReview(id) {
+  await fetch("/api/review/needs-review", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text_id:id, reason:"marked by reviewer"})
+  });
+  toast("needs_review"); loadPage();
+}
+async function saveMeta(id) {
+  const r = await fetch("/api/review/meta", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      text_id:id,
+      text_type: document.getElementById("type-"+id).value,
+      book_id: document.getElementById("book-"+id).value || null,
+      hadith_number: document.getElementById("num-"+id).value || null,
+      clear_hadith_number: !document.getElementById("num-"+id).value
+    })
+  });
+  if (!r.ok) { const j=await r.json(); toast("Error: "+(j.detail||"")); return; }
+  toast("meta saved"); loadPage();
+}
+async function doPublish(id) {
+  const r = await fetch("/api/review/publish", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text_id:id})
+  });
+  const j = await r.json();
+  if (j.ok) toast("PUBLISHED");
+  else toast("Gate blocked: " + (j.errors||[]).join("; "));
+  loadPage();
+}
+async function createFromScan() {
+  const r = await fetch("/api/review/create-from-scan", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      volume: current.vol, pdf_page: current.pdf,
+      verified_arabic: document.getElementById("newVerified").value,
+      text_type: document.getElementById("newType").value,
+      hadith_number: document.getElementById("newNum").value || null,
+      book_id: document.getElementById("newBook").value || null
+    })
+  });
+  const j = await r.json();
+  if (!r.ok) { toast("Error: "+(j.detail||"")); return; }
+  toast("created " + j.text_id); loadPage();
+}
+async function createBook() {
+  const r = await fetch("/api/review/create-book", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      arabic_title: document.getElementById("bookTitle").value,
+      volume_number: current.vol,
+      book_order: +document.getElementById("bookOrder").value,
+      start_pdf_page: current.pdf
+    })
+  });
+  const j = await r.json();
+  if (!r.ok) { toast("Error: "+(j.detail||"")); return; }
+  toast("book created"); loadPage();
+}
+async function createChapter() {
+  const r = await fetch("/api/review/create-chapter", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      book_id: document.getElementById("chBook").value,
+      arabic_title: document.getElementById("chTitle").value,
+      chapter_order: +document.getElementById("chOrder").value,
+      start_pdf_page: current.pdf,
+      volume_number: current.vol
+    })
+  });
+  const j = await r.json();
+  if (!r.ok) { toast("Error: "+(j.detail||"")); return; }
+  toast("chapter created"); loadPage();
+}
+async function showAudit(id) {
+  const r = await fetch("/api/audit/text_unit/" + id);
+  const rows = await r.json();
+  alert(rows.map(x => x.timestamp + " | " + x.action + " | " + x.user_id + " | " + (x.reason||"")).join("\n") || "no audit");
+}
+async function showList() {
+  const vol = +document.getElementById("vol").value;
+  const r = await fetch("/api/review/pages?volume=" + vol);
+  const rows = await r.json();
+  alert(rows.map(p => "PDF " + p.pdf_page_number + " | printed " + (p.printed_page_number??"-") + " | ocr=" + p.ocr_status + " | texts=" + p.text_count).join("\n") || "no OCR pages");
+}
+loadPage();
+</script>
+</body>
+</html>
