@@ -31,6 +31,31 @@ def main() -> int:
 
     ensure_review_columns()
 
+    print("=== Existing OCR JSON import ===")
+    from app.ocr_runner import import_existing_ocr_json
+    import json as _json
+    first = import_existing_ocr_json(1, 33)
+    second = import_existing_ocr_json(1, 33)
+    check("import existing JSON without running OCR engine", first.get("imported") is True or first.get("duplicate") is True)
+    check("duplicate import does not create second run", second.get("duplicate") is True)
+    check("import creates zero text_units", first.get("text_units_created") == 0)
+    with get_conn() as c:
+        n_runs = c.execute(
+            """
+            SELECT COUNT(*) FROM ocr_runs o
+            JOIN source_pages sp ON sp.source_page_id = o.source_page_id
+            JOIN volumes v ON v.volume_id = sp.volume_id
+            WHERE v.volume_number=1 AND sp.pdf_page_number=33
+            """
+        ).fetchone()[0]
+        raw_db = c.execute(
+            "SELECT ocr_output_raw FROM ocr_runs WHERE ocr_run_id=?",
+            (first["ocr_run_id"],),
+        ).fetchone()[0]
+    raw_json = _json.loads((ROOT / "storage/ocr/vol1/p0033.json").read_text(encoding="utf-8"))["raw_text"]
+    check("page 33 has exactly one OCR run after idempotent import", n_runs == 1)
+    check("imported raw OCR matches JSON bytes", raw_db == raw_json)
+
     print("=== Review workflow ===")
     with get_conn() as c:
         page = c.execute(

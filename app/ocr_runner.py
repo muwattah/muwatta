@@ -211,3 +211,105 @@ def ocr_range(
             })
             print(f"  FAIL vol{volume_number} p{p}: {e}", flush=True)
     return results
+
+
+def import_existing_ocr_json(volume_number: int, pdf_page: int) -> dict:
+    """
+    Register an already-saved OCR JSON into ocr_runs.
+    Does NOT run Tesseract. Does NOT create text_units.
+    Does NOT write arabic_text_verified. Idempotent on ocr_run_id.
+    """
+    from .sources import get_page
+
+    storage = OCR_STORAGE / f"vol{volume_number}" / f"p{pdf_page:04d}.json"
+    if not storage.exists():
+        raise FileNotFoundError(f"Existing OCR JSON not found: {storage}")
+    payload = json.loads(storage.read_text(encoding="utf-8"))
+    raw_text = payload.get("raw_text")
+    if raw_text is None:
+        raise ValueError("JSON has no raw_text")
+    page = get_page(volume_number, pdf_page)
+    if not page:
+        raise ValueError(f"Page not registered: vol={volume_number} pdf={pdf_page}")
+    ocr_run_id = payload.get("ocr_run_id") or new_id("ocr-")
+    engine = payload.get("engine") or OCR_ENGINE
+    model = payload.get("model") or OCR_MODEL
+    version = str(payload.get("version") or OCR_VERSION)
+    confidence = payload.get("confidence")
+    timestamp = payload.get("timestamp") or utcnow()
+    rel = str(storage.relative_to(ROOT))
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT ocr_run_id FROM ocr_runs WHERE ocr_run_id = ?", (ocr_run_id,)
+        ).fetchone()
+        if existing:
+            stored = conn.execute(
+                "SELECT ocr_output_raw FROM ocr_runs WHERE ocr_run_id = ?",
+                (ocr_run_id,),
+            ).fetchone()["ocr_output_raw"]
+            if stored != raw_text:
+                raise RuntimeError("existing OCR raw does not match JSON; refusing to overwrite")
+            return {
+                "imported": False,
+                "duplicate": True,
+                "ocr_run_id": ocr_run_id,
+                "source_page_id": page["source_page_id"],
+                "volume": volume_number,
+                "pdf_page": pdf_page,
+                "text_units_created": 0,
+            }
+        conn.execute(
+            """
+            INSERT INTO ocr_runs (
+                ocr_run_id, source_page_id, ocr_engine, ocr_model, ocr_version,
+                ocr_confidence, ocr_output_raw, ocr_timestamp, storage_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ocr_run_id,
+                page["source_page_id"],
+                engine,
+                model,
+                version,
+                confidence,
+                raw_text,
+                timestamp,
+                rel,
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE source_pages
+            SET ocr_status = 'done',
+                verification_status = CASE
+                    WHEN verification_status = 'imported' THEN 'extracted'
+                    ELSE verification_status
+                END
+            WHERE source_page_id = ?
+            """,
+            (page["source_page_id"],),
+        )
+        audit(
+            conn, "source_page", page["source_page_id"], "ocr_import_existing",
+            new_value={
+                "ocr_run_id": ocr_run_id,
+                "json_path": rel,
+                "engine": engine,
+                "model": model,
+                "confidence": confidence,
+            },
+            reason="Import existing OCR JSON; no engine run",
+        )
+    return {
+        "imported": True,
+        "duplicate": False,
+        "ocr_run_id": ocr_run_id,
+        "source_page_id": page["source_page_id"],
+        "volume": volume_number,
+        "pdf_page": pdf_page,
+        "confidence": confidence,
+        "char_count": len(raw_text),
+        "json_path": rel,
+        "text_units_created": 0,
+        "verification_status": "needs_review",
+    }
