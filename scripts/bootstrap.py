@@ -13,19 +13,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.db import init_db, get_conn, row_to_dict
+from app.db import init_db, get_conn, row_to_dict, DB_PATH, migrate_stable_source_ids
 from app.sources import register_source_files, register_all_pages, CANONICAL_TEXT_START
 
 
 def main() -> None:
     print("=== Al-Muwaṭṭaʾ Source Layer Bootstrap ===\n")
 
-    print("1. Initializing database + seeding edition...")
-    if (ROOT / "muwatta_source.db").exists():
-        print("   DB already exists — skipping schema (delete file to re-init).")
-    else:
-        init_db()
-        print("   Schema applied and edition seeded.")
+    print("1. Initializing durable database (never silent wipe)...")
+    print(f"   DB_PATH={DB_PATH}")
+    status = init_db()
+    print(f"   init_db → {status}")
+    migrate_stable_source_ids()
 
     with get_conn() as conn:
         ed = conn.execute("SELECT * FROM editions").fetchone()

@@ -6,7 +6,10 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from .db import get_conn, audit, new_id, row_to_dict, ROOT
+from .db import (
+    get_conn, audit, row_to_dict, ROOT,
+    stable_source_id, stable_volume_id, stable_source_page_id,
+)
 
 ORIGINALS = ROOT / "storage" / "originals"
 PAGE_IMAGES = ROOT / "storage" / "page_images"
@@ -70,8 +73,29 @@ def register_source_files() -> list[dict]:
                     "Refusing to register (integrity failure)."
                 )
 
-            source_id = new_id("src-")
-            volume_id = new_id("vol-")
+            existing = conn.execute(
+                "SELECT source_id FROM source_files WHERE edition_id='ed-bashshar-1997' AND volume_number=?",
+                (item["volume_number"],),
+            ).fetchone()
+            if existing:
+                vol = conn.execute(
+                    "SELECT volume_id FROM volumes WHERE edition_id='ed-bashshar-1997' AND volume_number=?",
+                    (item["volume_number"],),
+                ).fetchone()
+                registered.append(
+                    {
+                        "source_id": existing["source_id"],
+                        "volume_id": vol["volume_id"] if vol else None,
+                        "volume_number": item["volume_number"],
+                        "sha256": actual_hash,
+                        "page_count": item["page_count"],
+                        "already_present": True,
+                    }
+                )
+                continue
+
+            source_id = stable_source_id(item["volume_number"])
+            volume_id = stable_volume_id(item["volume_number"])
 
             # source_files
             conn.execute(
@@ -170,7 +194,13 @@ def register_all_pages(volume_number: Optional[int] = None) -> int:
                 if pdf_page in expected_blanks:
                     blank_status = "expected_blank"
 
-                page_id = new_id("pg-")
+                exists = conn.execute(
+                    "SELECT source_page_id FROM source_pages WHERE source_id=? AND pdf_page_number=?",
+                    (vol["source_id"], pdf_page),
+                ).fetchone()
+                if exists:
+                    continue
+                page_id = stable_source_page_id(vol["volume_number"], pdf_page)
                 conn.execute(
                     """
                     INSERT INTO source_pages (
