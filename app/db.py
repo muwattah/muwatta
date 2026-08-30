@@ -41,6 +41,17 @@ def get_conn() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    ensure_review_columns()
+
+
+def ensure_review_columns() -> None:
+    """Add review columns on existing DBs created from older schema.sql."""
+    with get_conn() as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(text_units)").fetchall()}
+        if "arabic_text_proposed" not in cols:
+            conn.execute("ALTER TABLE text_units ADD COLUMN arabic_text_proposed TEXT")
+        if "review_flag" not in cols:
+            conn.execute("ALTER TABLE text_units ADD COLUMN review_flag TEXT")
 
 
 def audit(

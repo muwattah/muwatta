@@ -165,11 +165,13 @@ CREATE TABLE text_units (
     text_type           TEXT NOT NULL DEFAULT 'needs_review'
                             CHECK (text_type IN (
                                 'hadith','athar','qawl_malik','heading',
-                                'other','needs_review'
+                                'editorial','unknown','other','needs_review'
                             )),
-    -- RAW vs VERIFIED (critical separation)
-    arabic_text_raw     TEXT,                      -- direct OCR / extraction
-    arabic_text_verified TEXT,                     -- NULL until human-approved
+    -- RAW vs PROPOSED vs VERIFIED (raw OCR is immutable)
+    arabic_text_raw     TEXT,                      -- direct OCR / extraction; never overwrite
+    arabic_text_proposed TEXT,                     -- segmenter/reviewer proposal only
+    arabic_text_verified TEXT,                     -- NULL until human checked against scan
+    review_flag         TEXT,                      -- human flag; does not delete content
     pdf_page            INTEGER,
     printed_page        INTEGER,
     verification_status TEXT NOT NULL DEFAULT 'needs_review'

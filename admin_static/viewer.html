@@ -193,7 +193,7 @@ function renderReview(data) {
   html += "<div class=section><h3>إنشاء وحدة نص من المسح</h3>";
   html += "<textarea class=verified id=newVerified placeholder=\"النص العربي من المسح…\"></textarea>";
   html += "<div class=form-row><label>type <select id=newType>";
-  for (const t of ["needs_review","hadith","athar","qawl_malik","other"]) {
+  for (const t of ["needs_review","hadith","athar","qawl_malik","heading","editorial","unknown","other"]) {
     html += "<option value=" + t + ">" + t + "</option>";
   }
   html += "</select></label>";
@@ -247,12 +247,19 @@ function renderUnit(u, data) {
   html += "<span>pages: " + pages + "</span>";
   if (u.published) html += "<span class=\"status st-published\">PUBLISHED</span>";
   html += "</div>";
-  html += "<div class=label-raw>RAW (OCR)</div>";
+  html += "<div class=label-raw>RAW OCR (immutable)</div>";
   html += "<div class=raw-box style=\"max-height:100px;font-size:0.95rem\">" + escapeHtml((u.arabic_text_raw||"").slice(0,400)) + "</div>";
+  if (u.arabic_text_proposed) {
+    html += "<div class=label-raw>PROPOSED (niet canoniek)</div>";
+    html += "<div class=raw-box style=\"max-height:80px;font-size:0.95rem\">" + escapeHtml((u.arabic_text_proposed||"").slice(0,400)) + "</div>";
+  }
+  if (u.review_flag) {
+    html += "<p class=warn>FLAG: " + escapeHtml(u.review_flag) + "</p>";
+  }
   html += "<div class=label-raw style=\"background:#e8f5e9;color:#1b5e20;margin-top:8px\">VERIFIED (human only)</div>";
   html += "<textarea class=verified id=ver-" + u.text_id + ">" + escapeHtml(u.arabic_text_verified||"") + "</textarea>";
   html += "<div class=form-row><label>type <select id=type-" + u.text_id + ">";
-  for (const t of ["needs_review","hadith","athar","qawl_malik","other","heading"]) {
+  for (const t of ["needs_review","hadith","athar","qawl_malik","heading","editorial","unknown","other"]) {
     html += "<option value=" + t + (u.text_type===t?" selected":"") + ">" + t + "</option>";
   }
   html += "</select></label>";
@@ -268,6 +275,9 @@ function renderUnit(u, data) {
   html += "<button class=btn-danger onclick=\"doReject('" + u.text_id + "')\">Reject</button>";
   html += "<button class=btn-warn onclick=\"doNeedsReview('" + u.text_id + "')\">needs_review</button>";
   html += "<button class=btn-neutral onclick=\"saveMeta('" + u.text_id + "')\">حفظ meta</button>";
+  html += "<button class=btn-warn onclick=\"doFlag('" + u.text_id + "')\">Flag</button>";
+  html += "<button class=btn-neutral onclick=\"doSplit('" + u.text_id + "')\">Split</button>";
+  html += "<button class=btn-neutral onclick=\"doMerge('" + u.text_id + "')\">Merge</button>";
   html += "<button class=btn-ghost onclick=\"doPublish('" + u.text_id + "')\">Publish gate</button>";
   html += "<button class=btn-ghost onclick=\"showAudit('" + u.text_id + "')\">Audit</button>";
   html += "</div></div>";
@@ -377,6 +387,40 @@ async function createChapter() {
   const j = await r.json();
   if (!r.ok) { toast("Error: "+(j.detail||"")); return; }
   toast("chapter created"); loadPage();
+}
+async function doFlag(id) {
+  const flag = prompt("flag (bijv. twijfel_voetnoot, onduidelijke_scan):");
+  if (!flag) return;
+  const r = await fetch("/api/review/flag", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text_id:id, flag:flag, reason:flag})
+  });
+  const j = await r.json();
+  if (!r.ok) { toast("Error: " + (j.detail||"")); return; }
+  toast("flagged"); loadPage();
+}
+async function doSplit(id) {
+  const raw = prompt("Split in delen, gescheiden door || (minimaal 2, letterlijk van de scan):");
+  if (!raw) return;
+  const parts = raw.split("||").map(s => s.trim()).filter(Boolean);
+  const r = await fetch("/api/review/split", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text_id:id, parts:parts, reason:"viewer split"})
+  });
+  const j = await r.json();
+  if (!r.ok) { toast("Error: " + (j.detail||"")); return; }
+  toast("split → " + (j.child_ids||[]).length + " units"); loadPage();
+}
+async function doMerge(id) {
+  const other = prompt("ID van de andere text_unit om mee te mergen:");
+  if (!other) return;
+  const r = await fetch("/api/review/merge", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text_ids:[id, other], reason:"viewer merge"})
+  });
+  const j = await r.json();
+  if (!r.ok) { toast("Error: " + (j.detail||"")); return; }
+  toast("merged " + j.merged_id); loadPage();
 }
 async function showAudit(id) {
   const r = await fetch("/api/audit/text_unit/" + id);

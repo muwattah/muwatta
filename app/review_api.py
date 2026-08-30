@@ -245,6 +245,8 @@ def try_publish(text_id: str, user_id: str = "reviewer") -> dict:
         ).fetchone()[0]
         if n_pages == 0 and not row["source_page_id"]:
             errors.append("no source page provenance")
+        if row["text_type"] in ("editorial", "unknown", "needs_review"):
+            errors.append(f"text_type {row['text_type']} cannot be published as canonical")
         if errors:
             return {"ok": False, "published": 0, "errors": errors}
         conn.execute(
@@ -266,7 +268,10 @@ def update_text_meta(
     user_id: str = "reviewer",
     reason: str = "",
 ) -> dict:
-    allowed_types = {"hadith", "athar", "qawl_malik", "other", "needs_review", "heading"}
+    allowed_types = {
+        "hadith", "athar", "qawl_malik", "other", "needs_review",
+        "heading", "editorial", "unknown",
+    }
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM text_units WHERE text_id = ?", (text_id,)).fetchone()
         if not row:
@@ -514,3 +519,196 @@ def mark_needs_review(text_id: str, reason: str, user_id: str = "reviewer") -> d
         audit(conn, "text_unit", text_id, "mark_needs_review",
               new_value={"reason": reason}, user_id=user_id, reason=reason)
         return {"text_id": text_id, "status": "needs_review"}
+
+
+def flag_text_unit(text_id: str, flag: str, reason: str = "", user_id: str = "reviewer") -> dict:
+    if not flag or not flag.strip():
+        raise ValueError("flag required")
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM text_units WHERE text_id = ?", (text_id,)).fetchone()
+        if not row:
+            raise ValueError("text_unit not found")
+        raw_before = row["arabic_text_raw"]
+        conn.execute(
+            """
+            UPDATE text_units
+            SET review_flag = ?, verification_status = 'needs_review', published = 0, updated_at = ?
+            WHERE text_id = ?
+            """,
+            (flag.strip(), utcnow(), text_id),
+        )
+        raw_after = conn.execute(
+            "SELECT arabic_text_raw FROM text_units WHERE text_id = ?", (text_id,)
+        ).fetchone()["arabic_text_raw"]
+        if raw_after != raw_before:
+            raise RuntimeError("raw OCR must remain immutable")
+        audit(
+            conn, "text_unit", text_id, "flag",
+            old_value={"review_flag": row["review_flag"]},
+            new_value={"review_flag": flag.strip()},
+            user_id=user_id, reason=reason or flag.strip(),
+        )
+        return {"text_id": text_id, "review_flag": flag.strip(), "status": "needs_review"}
+
+
+def split_text_unit(
+    text_id: str,
+    parts: list[str],
+    user_id: str = "reviewer",
+    reason: str = "",
+) -> dict:
+    """
+    Split one proposed unit into multiple needs_review units.
+    Original raw OCR is kept on the parent (never deleted).
+    Parent becomes superseded. Children stay needs_review / unpublished.
+    """
+    clean = [p.strip() for p in parts if p and p.strip()]
+    if len(clean) < 2:
+        raise ValueError("split requires at least two non-empty parts from the scan")
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM text_units WHERE text_id = ?", (text_id,)).fetchone()
+        if not row:
+            raise ValueError("text_unit not found")
+        parent_raw = row["arabic_text_raw"]
+        created = []
+        for i, part in enumerate(clean, start=1):
+            child_id = new_id("txt-")
+            conn.execute(
+                """
+                INSERT INTO text_units (
+                    text_id, edition_id, volume_id, book_id, chapter_id, source_page_id,
+                    text_order, hadith_number, text_type,
+                    arabic_text_raw, arabic_text_proposed, arabic_text_verified,
+                    pdf_page, printed_page, verification_status, published, is_test, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'needs_review', ?, ?, NULL, ?, ?, 'needs_review', 0, ?, ?)
+                """,
+                (
+                    child_id, row["edition_id"], row["volume_id"], row["book_id"],
+                    row["chapter_id"], row["source_page_id"],
+                    (row["text_order"] or 0) * 10 + i,
+                    parent_raw,
+                    part,
+                    row["pdf_page"], row["printed_page"],
+                    row["is_test"] if "is_test" in row.keys() else 0,
+                    f"split from {text_id}",
+                ),
+            )
+            if row["source_page_id"]:
+                conn.execute(
+                    """
+                    INSERT INTO text_unit_source_pages (id, text_id, source_page_id, page_role, sequence_order)
+                    VALUES (?, ?, ?, 'only', 1)
+                    """,
+                    (new_id("tsp-"), child_id, row["source_page_id"]),
+                )
+            created.append(child_id)
+            audit(conn, "text_unit", child_id, "split_child",
+                  new_value={"parent": text_id, "part": i},
+                  user_id=user_id, reason=reason or "split from scan")
+        conn.execute(
+            """
+            UPDATE text_units
+            SET verification_status = 'superseded', published = 0, updated_at = ?, notes = ?
+            WHERE text_id = ?
+            """,
+            (utcnow(), f"superseded by split: {','.join(created)}", text_id),
+        )
+        raw_after = conn.execute(
+            "SELECT arabic_text_raw FROM text_units WHERE text_id = ?", (text_id,)
+        ).fetchone()["arabic_text_raw"]
+        if raw_after != parent_raw:
+            raise RuntimeError("raw OCR must remain immutable")
+        audit(conn, "text_unit", text_id, "split",
+              old_value={"status": row["verification_status"]},
+              new_value={"children": created},
+              user_id=user_id, reason=reason or "human split against scan")
+        return {"parent_id": text_id, "child_ids": created, "status": "superseded"}
+
+
+def merge_text_units(
+    text_ids: list[str],
+    user_id: str = "reviewer",
+    reason: str = "",
+) -> dict:
+    """
+    Merge two or more units that are one continuous passage on the scan.
+    Source raw OCR of each parent is kept. New unit is needs_review, unpublished.
+    """
+    ids = [t for t in text_ids if t]
+    if len(ids) < 2:
+        raise ValueError("merge requires at least two text units")
+    with get_conn() as conn:
+        rows = []
+        for tid in ids:
+            row = conn.execute("SELECT * FROM text_units WHERE text_id = ?", (tid,)).fetchone()
+            if not row:
+                raise ValueError(f"text_unit not found: {tid}")
+            rows.append(dict(row))
+        first = rows[0]
+        proposed_parts = []
+        for r in rows:
+            proposed_parts.append(
+                r.get("arabic_text_verified")
+                or r.get("arabic_text_proposed")
+                or r.get("arabic_text_raw")
+                or ""
+            )
+        merged_proposed = "\n".join(p for p in proposed_parts if p)
+        merged_id = new_id("txt-")
+        conn.execute(
+            """
+            INSERT INTO text_units (
+                text_id, edition_id, volume_id, book_id, chapter_id, source_page_id,
+                text_order, hadith_number, text_type,
+                arabic_text_raw, arabic_text_proposed, arabic_text_verified,
+                pdf_page, printed_page, verification_status, published, is_test, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'needs_review', ?, ?, NULL, ?, ?, 'needs_review', 0, ?, ?)
+            """,
+            (
+                merged_id, first["edition_id"], first["volume_id"], first["book_id"],
+                first["chapter_id"], first["source_page_id"],
+                first["text_order"],
+                "\n---\n".join((r.get("arabic_text_raw") or "") for r in rows),
+                merged_proposed,
+                first["pdf_page"], first["printed_page"],
+                first.get("is_test") or 0,
+                f"merged from {','.join(ids)}",
+            ),
+        )
+        seq = 1
+        seen_pages = set()
+        for r in rows:
+            page_id = r.get("source_page_id")
+            if page_id and page_id not in seen_pages:
+                role = "start" if seq == 1 else "continuation"
+                conn.execute(
+                    """
+                    INSERT INTO text_unit_source_pages (id, text_id, source_page_id, page_role, sequence_order)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (new_id("tsp-"), merged_id, page_id, role, seq),
+                )
+                seen_pages.add(page_id)
+                seq += 1
+        for r in rows:
+            parent_raw = r.get("arabic_text_raw")
+            conn.execute(
+                """
+                UPDATE text_units
+                SET verification_status = 'superseded', published = 0, updated_at = ?, notes = ?
+                WHERE text_id = ?
+                """,
+                (utcnow(), f"merged into {merged_id}", r["text_id"]),
+            )
+            raw_after = conn.execute(
+                "SELECT arabic_text_raw FROM text_units WHERE text_id = ?", (r["text_id"],)
+            ).fetchone()["arabic_text_raw"]
+            if raw_after != parent_raw:
+                raise RuntimeError("raw OCR must remain immutable")
+            audit(conn, "text_unit", r["text_id"], "merge_source",
+                  new_value={"merged_into": merged_id},
+                  user_id=user_id, reason=reason or "human merge against scan")
+        audit(conn, "text_unit", merged_id, "merge",
+              new_value={"sources": ids},
+              user_id=user_id, reason=reason or "human merge against scan")
+        return {"merged_id": merged_id, "source_ids": ids, "status": "needs_review"}

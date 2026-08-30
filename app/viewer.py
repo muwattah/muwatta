@@ -29,6 +29,9 @@ from app.review_api import (
     create_chapter,
     create_text_unit_manual,
     mark_needs_review,
+    flag_text_unit,
+    split_text_unit,
+    merge_text_units,
 )
 from app.db import get_conn
 
@@ -92,6 +95,26 @@ class CreateChapterBody(BaseModel):
     chapter_order: int = 1
     start_pdf_page: Optional[int] = None
     volume_number: int = 1
+    user_id: str = "reviewer"
+
+
+class FlagBody(BaseModel):
+    text_id: str
+    flag: str
+    reason: str = ""
+    user_id: str = "reviewer"
+
+
+class SplitBody(BaseModel):
+    text_id: str
+    parts: list[str]
+    reason: str = ""
+    user_id: str = "reviewer"
+
+
+class MergeBody(BaseModel):
+    text_ids: list[str]
+    reason: str = ""
     user_id: str = "reviewer"
 
 
@@ -205,6 +228,30 @@ def api_create_chapter(body: CreateChapterBody):
             body.start_pdf_page, body.volume_number, body.user_id,
         )
         return {"chapter_id": chapter_id}
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/review/flag")
+def api_flag(body: FlagBody):
+    try:
+        return flag_text_unit(body.text_id, body.flag, body.reason, body.user_id)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/review/split")
+def api_split(body: SplitBody):
+    try:
+        return split_text_unit(body.text_id, body.parts, body.user_id, body.reason)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/review/merge")
+def api_merge(body: MergeBody):
+    try:
+        return merge_text_units(body.text_ids, body.user_id, body.reason)
     except Exception as e:
         raise HTTPException(400, str(e))
 
