@@ -39,46 +39,92 @@ def stable_source_page_id(volume_number: int, pdf_page: int) -> str:
     return f"pg-{EDITION_ID}-v{int(volume_number)}-p{int(pdf_page):04d}"
 
 
-def persist_snapshot() -> None:
-    if not DB_PATH.exists() or DB_PATH.stat().st_size == 0:
-        return
-    data = DB_PATH.read_bytes()
-    # Primary durable snapshot on overlay FS (/home/workdir), not grok-files.
-    home_snap = Path("/home/workdir/muwatta_source.snapshot.sqlite")
+
+PRIMARY_SNAPSHOT = Path("/home/workdir/muwatta_source.snapshot.sqlite")
+SNAPSHOT_TMP = Path("/home/workdir/muwatta_source.snapshot.sqlite.tmp")
+
+
+class PersistenceError(RuntimeError):
+    pass
+
+
+def _sqlite_ok(path: Path) -> bool:
+    if not path.exists() or path.stat().st_size == 0:
+        return False
     try:
-        home_snap.write_bytes(data)
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            chk = conn.execute("PRAGMA integrity_check").fetchone()
+            has = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='editions'"
+            ).fetchone()
+            return bool(chk and chk[0] == "ok" and has)
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+
+
+def persist_snapshot() -> bool:
+    """Atomic snapshot AFTER a successful SQLite commit only."""
+    if not _sqlite_ok(DB_PATH):
+        return False
+    SNAPSHOT_TMP.parent.mkdir(parents=True, exist_ok=True)
+    if SNAPSHOT_TMP.exists():
+        SNAPSHOT_TMP.unlink()
+    src = sqlite3.connect(DB_PATH)
+    dst = sqlite3.connect(SNAPSHOT_TMP)
+    try:
+        src.backup(dst)
+        dst.commit()
+    finally:
+        dst.close()
+        src.close()
+    if not _sqlite_ok(SNAPSHOT_TMP):
+        SNAPSHOT_TMP.unlink(missing_ok=True)
+        raise PersistenceError("snapshot temp failed integrity_check; previous snapshot kept")
+    SNAPSHOT_TMP.replace(PRIMARY_SNAPSHOT)
+    # Best-effort project copy; never fail the review write if artifacts FS errors.
+    try:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        SNAPSHOT_PATH.write_bytes(PRIMARY_SNAPSHOT.read_bytes())
     except OSError:
         pass
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        SNAPSHOT_PATH.write_bytes(data)
-    except OSError:
-        alt = RUNTIME_DIR / "muwatta_source.snapshot.bak"
-        try:
-            alt.write_bytes(data)
-        except OSError:
-            pass
+    return True
 
 
 def restore_snapshot_if_needed() -> str:
-    live_ok = DB_PATH.exists() and DB_PATH.stat().st_size > 0
-    if live_ok:
+    if _sqlite_ok(DB_PATH):
         return "live"
-    for cand in (Path("/home/workdir/muwatta_source.snapshot.sqlite"), SNAPSHOT_PATH, RUNTIME_DIR / "muwatta_source.snapshot.bak"):
-        if cand.exists() and cand.stat().st_size > 0:
+    if PRIMARY_SNAPSHOT.exists() and PRIMARY_SNAPSHOT.stat().st_size > 0:
+        if _sqlite_ok(PRIMARY_SNAPSHOT):
+            DB_PATH.write_bytes(PRIMARY_SNAPSHOT.read_bytes())
+            if _sqlite_ok(DB_PATH):
+                return "restored"
+        raise PersistenceError(
+            f"Primary snapshot is corrupt: {PRIMARY_SNAPSHOT}. Refusing silent empty DB."
+        )
+    for cand in (SNAPSHOT_PATH, RUNTIME_DIR / "muwatta_source.snapshot.bak"):
+        if cand.exists() and cand.stat().st_size > 0 and _sqlite_ok(cand):
             DB_PATH.write_bytes(cand.read_bytes())
-            return "restored"
+            if _sqlite_ok(DB_PATH):
+                return "restored"
+        if cand.exists() and cand.stat().st_size > 0 and not _sqlite_ok(cand):
+            raise PersistenceError(f"Snapshot is corrupt: {cand}. Refusing silent empty DB.")
     return "empty"
 
 
 @contextmanager
-def get_conn() -> Iterator[sqlite3.Connection]:
+def get_conn(*, readonly: bool = False) -> Iterator[sqlite3.Connection]:
     restore_snapshot_if_needed()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
+        if readonly:
+            conn.rollback()
+            return
         conn.commit()
         persist_snapshot()
     except Exception:
@@ -106,10 +152,13 @@ def init_db(*, force: bool = False) -> str:
     state = restore_snapshot_if_needed()
     if db_has_schema() and not force:
         ensure_review_columns()
-        persist_snapshot()
         return "exists" if state != "restored" else "restored"
     if (DB_PATH.exists() and DB_PATH.stat().st_size > 0) and not force:
         raise RuntimeError(f"Database file exists but has no schema: {DB_PATH}. Refusing to overwrite.")
+    if PRIMARY_SNAPSHOT.exists() and PRIMARY_SNAPSHOT.stat().st_size > 0 and not force:
+        raise PersistenceError(
+            f"Snapshot present at {PRIMARY_SNAPSHOT} but could not be used. Refusing empty DB."
+        )
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
