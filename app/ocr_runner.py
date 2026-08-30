@@ -110,6 +110,31 @@ def ocr_page(volume_number: int, pdf_page: int, dpi: int = 150) -> dict:
     if not page:
         raise ValueError(f"Page not registered: vol={volume_number} pdf={pdf_page}")
 
+    storage = OCR_STORAGE / f"vol{volume_number}" / f"p{pdf_page:04d}.json"
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT ocr_run_id FROM ocr_runs WHERE source_page_id = ? ORDER BY ocr_timestamp LIMIT 1",
+            (page["source_page_id"],),
+        ).fetchone()
+    if existing or storage.exists():
+        if (existing is None) and storage.exists():
+            imported = import_existing_ocr_json(volume_number, pdf_page)
+            return {
+                "skipped_existing": True,
+                "imported_json": True,
+                "ocr_run_id": imported.get("ocr_run_id"),
+                "source_page_id": page["source_page_id"],
+                "volume": volume_number,
+                "pdf_page": pdf_page,
+            }
+        return {
+            "skipped_existing": True,
+            "ocr_run_id": existing["ocr_run_id"],
+            "source_page_id": page["source_page_id"],
+            "volume": volume_number,
+            "pdf_page": pdf_page,
+        }
+
     image_path = extract_page_image(volume_number, pdf_page, dpi=dpi)
     raw_text, confidence = run_ocr_on_image(image_path)
 
