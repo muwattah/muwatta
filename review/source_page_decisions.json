@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "purpose": "Git-traceable human source-page review decisions; does not alter or reconstruct raw OCR",
+  "decisions": [
+    {
+      "volume_id": "vol-ed-bashshar-1997-v1",
+      "pdf_page_number": 304,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v1",
+      "pdf_page_number": 418,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v1",
+      "pdf_page_number": 432,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v1",
+      "pdf_page_number": 570,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v1",
+      "pdf_page_number": 628,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v1",
+      "pdf_page_number": 634,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 118,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 238,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 248,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 308,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 322,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 342,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 408,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 450,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 460,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 606,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 668,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 692,
+      "field": "blank_status",
+      "value": "expected_blank",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed blank page"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v1",
+      "pdf_page_number": 618,
+      "field": "verification_status",
+      "value": "needs_review",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed substantive text but suspiciously low OCR output"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 378,
+      "field": "verification_status",
+      "value": "needs_review",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed substantive text but suspiciously low OCR output"
+    },
+    {
+      "volume_id": "vol-ed-bashshar-1997-v2",
+      "pdf_page_number": 407,
+      "field": "verification_status",
+      "value": "needs_review",
+      "reviewer": "human-review",
+      "reason": "Visually confirmed substantive text but suspiciously low OCR output"
+    }
+  ]
+}
