@@ -65,7 +65,7 @@ def run_ocr_on_image(image_path: Path) -> tuple[str, Optional[float]]:
         "--psm", "6",  # assume uniform block of text
     ]
     r = subprocess.run(
-        cmd_txt, capture_output=True, text=True, env={**dict(**{k: str(v) for k, v in __import__('os').environ.items()}), **env},
+        cmd_txt, capture_output=True, text=True, encoding="utf-8", errors="replace", env={**dict(**{k: str(v) for k, v in __import__('os').environ.items()}), **env},
         timeout=120,
     )
     raw = r.stdout or ""
@@ -78,7 +78,7 @@ def run_ocr_on_image(image_path: Path) -> tuple[str, Optional[float]]:
         "tsv",
     ]
     r2 = subprocess.run(
-        cmd_tsv, capture_output=True, text=True, env={**dict(**{k: str(v) for k, v in __import__('os').environ.items()}), **env},
+        cmd_tsv, capture_output=True, text=True, encoding="utf-8", errors="replace", env={**dict(**{k: str(v) for k, v in __import__('os').environ.items()}), **env},
         timeout=120,
     )
     if r2.returncode == 0 and r2.stdout:

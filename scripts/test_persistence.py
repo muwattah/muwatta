@@ -36,7 +36,7 @@ def main() -> int:
 
     print("=== Persistence ===")
     check("live DB path is explicit", str(DB_PATH).endswith("muwatta_source.db"))
-    check("durable snapshot path under storage/runtime", "storage/runtime" in str(SNAPSHOT_PATH))
+    check("durable snapshot path under storage/runtime", SNAPSHOT_PATH.parent.name == "runtime" and SNAPSHOT_PATH.parent.parent.name == "storage")
 
     first = init_db()
     check("init_db does not wipe existing schema", first in ("exists", "created"))

@@ -12,9 +12,10 @@ from typing import Any, Iterator, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNTIME_DIR = ROOT / "storage" / "runtime"
+RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 SCHEMA_PATH = ROOT / "schema.sql"
 EDITION_ID = "ed-bashshar-1997"
-DB_PATH = Path("/tmp/muwatta_source.db")
+DB_PATH = RUNTIME_DIR / "muwatta_source.db"
 SNAPSHOT_PATH = RUNTIME_DIR / "muwatta_source.snapshot.sqlite"
 
 
@@ -40,8 +41,8 @@ def stable_source_page_id(volume_number: int, pdf_page: int) -> str:
 
 
 
-PRIMARY_SNAPSHOT = Path("/home/workdir/muwatta_source.snapshot.sqlite")
-SNAPSHOT_TMP = Path("/home/workdir/muwatta_source.snapshot.sqlite.tmp")
+PRIMARY_SNAPSHOT = RUNTIME_DIR / "muwatta_source.snapshot.sqlite"
+SNAPSHOT_TMP = RUNTIME_DIR / "muwatta_source.snapshot.sqlite.tmp"
 
 
 class PersistenceError(RuntimeError):
