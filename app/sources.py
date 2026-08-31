@@ -230,6 +230,24 @@ def register_all_pages(volume_number: Optional[int] = None) -> int:
     return count
 
 
+def get_source_pdf_path(volume_number: int, pdf_page: int) -> Path:
+    """Return the registered immutable source PDF path for a page."""
+    with get_conn(readonly=True) as conn:
+        row = conn.execute(
+            """
+            SELECT sf.storage_path
+            FROM source_pages sp
+            JOIN source_files sf ON sf.source_id = sp.source_id
+            JOIN volumes v ON v.volume_id = sp.volume_id
+            WHERE v.volume_number = ? AND sp.pdf_page_number = ?
+            """,
+            (volume_number, pdf_page),
+        ).fetchone()
+    if not row:
+        raise ValueError(f"Page not registered: vol {volume_number} pdf {pdf_page}")
+    return ROOT / row["storage_path"]
+
+
 def extract_page_image(volume_number: int, pdf_page: int, dpi: int = 120) -> Path:
     """Extract a single page image for the source viewer. Does not modify the PDF."""
     with get_conn() as conn:

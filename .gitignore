@@ -44,3 +44,4 @@ app/viewer_old.py
 
 # Durable runtime snapshots (never commit review DB)
 storage/runtime/
+storage/ocr_review/

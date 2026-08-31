@@ -14,13 +14,16 @@ import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from PIL import Image
 from typing import Optional
 
 from .db import get_conn, audit, new_id, ROOT
 
 TESSDATA = ROOT / "tessdata"
 OCR_STORAGE = ROOT / "storage" / "ocr"
+OCR_REVIEW_STORAGE = ROOT / "storage" / "ocr_review"
 OCR_STORAGE.mkdir(parents=True, exist_ok=True)
+OCR_REVIEW_STORAGE.mkdir(parents=True, exist_ok=True)
 
 OCR_ENGINE = "tesseract"
 OCR_MODEL = "ara"  # tessdata_best ara
@@ -52,7 +55,7 @@ def _preprocess_layout_only(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def run_ocr_on_image(image_path: Path) -> tuple[str, Optional[float]]:
+def run_ocr_on_image(image_path: Path, psm: int = 6) -> tuple[str, Optional[float]]:
     """
     Run Tesseract Arabic OCR on a page image.
     Returns (raw_text, confidence_or_None).
@@ -62,7 +65,7 @@ def run_ocr_on_image(image_path: Path) -> tuple[str, Optional[float]]:
     cmd_txt = [
         "tesseract", str(image_path), "stdout",
         "-l", "ara",
-        "--psm", "6",  # assume uniform block of text
+        "--psm", str(psm),  # default remains 6
     ]
     r = subprocess.run(
         cmd_txt, capture_output=True, text=True, encoding="utf-8", errors="replace", env={**dict(**{k: str(v) for k, v in __import__('os').environ.items()}), **env},
@@ -74,7 +77,7 @@ def run_ocr_on_image(image_path: Path) -> tuple[str, Optional[float]]:
     cmd_tsv = [
         "tesseract", str(image_path), "stdout",
         "-l", "ara",
-        "--psm", "6",
+        "--psm", str(psm),
         "tsv",
     ]
     r2 = subprocess.run(
