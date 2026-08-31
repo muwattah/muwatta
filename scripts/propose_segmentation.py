@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from app.db import DB_PATH
 from app.proposals import detect_proposals, summarize_hits, create_proposals_for_ocr_run, select_ocr_run
+from app.review_workstation import parse_page_range, should_skip_page
 
 
 def _readonly():
@@ -31,7 +32,13 @@ def main() -> int:
     p.add_argument("--ocr-run-id", default=None, help="required if a page has multiple OCR runs and you do not want the original run")
     p.add_argument("--ocr-role", choices=["original", "review"], default="original")
     p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--pilot", action="store_true", help="restrict to a small explicit page set")
+    p.add_argument("--pages", default=None, help="e.g. 33-42 (requires --volume)")
     args = p.parse_args()
+    if args.pilot and not args.pages:
+        args.pages = "33-42"
+        args.volume = args.volume or 1
+        args.limit = 20
 
     conn = _readonly()
     try:
@@ -60,8 +67,15 @@ def main() -> int:
 
     totals = Counter()
     pages_ambiguous = 0
-    print(f"pages scanned: {len(pages)} write={args.write} role={args.ocr_role}")
+    if args.pages:
+        wanted = set(parse_page_range(args.pages))
+        pages = [x for x in pages if x["pdf_page_number"] in wanted]
+    print(f"pages scanned: {len(pages)} write={args.write} role={args.ocr_role} pilot={args.pilot}")
     for page in pages:
+        skip, why = should_skip_page(page["volume_number"], page["pdf_page_number"])
+        if skip:
+            print(f"  vol{page['volume_number']} p{page['pdf_page_number']} SKIP {why}")
+            continue
         run = select_ocr_run(page["source_page_id"], ocr_run_id=args.ocr_run_id, role=args.ocr_role)
         raw = run.get("ocr_output_raw") or ""
         hits = detect_proposals(raw)

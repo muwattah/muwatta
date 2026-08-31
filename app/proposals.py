@@ -10,6 +10,9 @@ import hashlib
 import re
 from typing import Optional
 
+class ConflictError(RuntimeError):
+    pass
+
 from .db import get_conn, audit, new_id, utcnow, ensure_review_columns
 
 GENERATOR = "regex_v1"
@@ -124,6 +127,9 @@ def ensure_proposal_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_segprop_status ON segmentation_proposals(proposal_status)"
         )
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(segmentation_proposals)").fetchall()}
+        if "lock_version" not in cols:
+            conn.execute("ALTER TABLE segmentation_proposals ADD COLUMN lock_version INTEGER NOT NULL DEFAULT 1")
 
 
 def _span_hash(ocr_run_id: str, start: int, end: int, ptype: str) -> str:
@@ -218,6 +224,9 @@ def create_proposals_for_ocr_run(ocr_run_id: str, *, write: bool = False) -> dic
             raise ValueError(f"ocr_run not found: {ocr_run_id}")
         raw = run["ocr_output_raw"] or ""
         page_id = run["source_page_id"]
+        blank = conn.execute("SELECT blank_status FROM source_pages WHERE source_page_id=?", (page_id,)).fetchone()
+        if blank and blank["blank_status"] == "expected_blank":
+            return {"skipped": "expected_blank", "ocr_run_id": ocr_run_id, "source_page_id": page_id, "created": 0}
         hits = detect_proposals(raw)
         created = 0
         skipped = 0
@@ -270,6 +279,9 @@ def _set_status(proposal_id: str, status: str, user_id: str, reason: str, extra:
     with get_conn() as conn:
         row = _get(conn, proposal_id)
         old = dict(row)
+        expected_version = extra.pop("expected_version", None) if extra else None
+        if expected_version is not None and int(old.get("lock_version") or 1) != int(expected_version):
+            raise ConflictError("proposal changed; reload and retry")
         if old["proposal_status"] == "superseded" and status != "superseded":
             raise ValueError("superseded proposal cannot change status")
         if old["proposal_status"] == "rejected" and status == "accepted":
@@ -282,6 +294,7 @@ def _set_status(proposal_id: str, status: str, user_id: str, reason: str, extra:
             fields.append("proposed_type = ?")
             params.append(extra["proposed_type"])
         params.append(proposal_id)
+        fields.append("lock_version = COALESCE(lock_version,1) + 1")
         conn.execute(f"UPDATE segmentation_proposals SET {', '.join(fields)} WHERE proposal_id = ?", params)
         audit(
             conn, "segmentation_proposal", proposal_id, status,
@@ -292,14 +305,14 @@ def _set_status(proposal_id: str, status: str, user_id: str, reason: str, extra:
         return dict(_get(conn, proposal_id))
 
 
-def accept_proposal(proposal_id: str, user_id: str = "reviewer", reason: str = "") -> dict:
+def accept_proposal(proposal_id: str, user_id: str = "reviewer", reason: str = "", expected_version: int | None = None) -> dict:
     """Accept = human agrees the span/type is a useful segmentation hypothesis.
     Does NOT publish and does NOT create canonical units."""
-    return _set_status(proposal_id, "accepted", user_id, reason or "accepted")
+    return _set_status(proposal_id, "accepted", user_id, reason or "accepted", extra={"expected_version": expected_version})
 
 
-def reject_proposal(proposal_id: str, user_id: str = "reviewer", reason: str = "") -> dict:
-    return _set_status(proposal_id, "rejected", user_id, reason or "rejected")
+def reject_proposal(proposal_id: str, user_id: str = "reviewer", reason: str = "", expected_version: int | None = None) -> dict:
+    return _set_status(proposal_id, "rejected", user_id, reason or "rejected", extra={"expected_version": expected_version})
 
 
 def reclassify_proposal(proposal_id: str, new_type: str, user_id: str = "reviewer", reason: str = "") -> dict:

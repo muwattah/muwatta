@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="utf-8"/>
+<title>Muwaṭṭaʾ review workstation</title>
+<style>
+  body{margin:0;background:#121212;color:#eee;font-family:sans-serif;}
+  header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:#1b1b1b;border-bottom:1px solid #333;}
+  header label{font-size:12px;color:#bbb}
+  .grid{display:grid;grid-template-columns:1fr 1fr 1fr;min-height:calc(100vh - 90px);}
+  section{border-left:1px solid #333;padding:8px;overflow:auto;}
+  h2{margin:0 0 8px;font-size:14px;letter-spacing:.04em;}
+  .layer-source{color:#8ecae6} .layer-raw{color:#ffd166} .layer-prop{color:#90be6d}
+  pre#raw{white-space:pre-wrap;direction:rtl;unicode-bidi:isolate;background:#181818;padding:8px;min-height:50vh;}
+  mark{background:#664400;color:#fff;}
+  .card{border:1px solid #444;margin:8px 0;padding:8px;background:#191919;}
+  .muted{color:#9aa;font-size:12px;}
+  button{margin:2px;}
+  #scan{max-width:100%;background:#000;}
+  .k{font-size:11px;color:#888}
+</style>
+</head>
+<body>
+<header>
+  <strong>Review workstation</strong>
+  <label>Vol <input id="vol" type="number" value="1" style="width:4em"></label>
+  <label>PDF <input id="page" type="number" value="33" style="width:5em"></label>
+  <button onclick="load()">Open</button>
+  <button onclick="nav(-1)">←</button>
+  <button onclick="nav(1)">→</button>
+  <label>OCR role
+    <select id="role" onchange="load()">
+      <option value="original">original (default)</option>
+      <option value="review">review candidate</option>
+    </select>
+  </label>
+  <label>filter
+    <select id="filter" onchange="render()">
+      <option value="">all</option>
+      <option value="needs_review">needs_review</option>
+      <option value="unknown">unknown</option>
+      <option value="editorial">editorial</option>
+      <option value="heading">headings</option>
+      <option value="flagged">flagged</option>
+    </select>
+  </label>
+  <span class="muted" id="meta"></span>
+</header>
+<div class="grid">
+  <section>
+    <h2 class="layer-source">SOURCE PAGE</h2>
+    <img id="scan" alt="scan if available locally"/>
+    <div class="muted">Scan is authority. Missing image here is OK; do not invent one.</div>
+  </section>
+  <section>
+    <h2 class="layer-raw">RAW OCR — immutable</h2>
+    <pre id="raw" lang="ar" dir="rtl"></pre>
+  </section>
+  <section>
+    <h2 class="layer-prop">MACHINE PROPOSALS — needs_review</h2>
+    <div class="k">A accept · R reject · U unknown · E editorial · F flag · ←/→ page. Split/merge require explicit buttons.</div>
+    <div class="muted">Machine confidence ≠ bronbetrouwbaarheid. Accepted ≠ verified Arabic.</div>
+    <div id="list"></div>
+  </section>
+</div>
+<script>
+let DATA=null, RAW='';
+async function load(){
+  const v=document.getElementById('vol').value, p=document.getElementById('page').value;
+  const role=document.getElementById('role').value;
+  const r=await fetch(`/api/review/page?volume=${v}&pdf_page=${p}&ocr_role=${role}`);
+  DATA=await r.json();
+  RAW=(DATA.ocr_selected&&DATA.ocr_selected.ocr_output_raw)||'';
+  document.getElementById('raw').textContent=RAW;
+  const pg=DATA.page||{};
+  document.getElementById('meta').textContent =
+    `vol ${pg.volume_number} pdf ${pg.pdf_page_number} printed ${pg.printed_page_number||'?'} blank=${pg.blank_status||''} ocr=${pg.ocr_status||''} ver=${pg.verification_status||''} runs=${(DATA.ocr_runs||[]).length} proposals=${(DATA.proposals||[]).length} unresolved=${DATA.unresolved_count||0}`;
+  document.getElementById('scan').src=`/api/scan/${pg.volume_number||v}/${pg.pdf_page_number||p}`;
+  render();
+}
+function render(){
+  const f=document.getElementById('filter').value;
+  const box=document.getElementById('list'); box.innerHTML='';
+  (DATA.proposals||[]).forEach(pr=>{
+    const types=pr.proposed_type||'';
+    const flagged=(pr.flags||[]).length>0;
+    if(f==='needs_review' && pr.proposal_status!=='needs_review') return;
+    if(f==='unknown' && types!=='unknown') return;
+    if(f==='editorial' && !['editorial_note','editorial_candidate','footnote'].includes(types)) return;
+    if(f==='heading' && !['book_heading','chapter_heading'].includes(types)) return;
+    if(f==='flagged' && !flagged) return;
+    const d=document.createElement('div'); d.className='card';
+    d.innerHTML=`<div><b>${pr.proposed_type}</b> · ${pr.proposal_status} · machine confidence ${pr.confidence}</div>
+      <div class="muted">${pr.proposal_id} v${pr.lock_version||1} ${pr.start_offset}:${pr.end_offset}</div>
+      <pre lang="ar" dir="rtl">${escapeHtml(pr.raw_excerpt||'')}</pre>
+      <div class="muted">${pr.reason||''}</div>
+      <button onclick="act('accept','${pr.proposal_id}',${pr.lock_version||1})">accept</button>
+      <button onclick="act('reject','${pr.proposal_id}',${pr.lock_version||1})">reject</button>
+      <button onclick="act('unknown','${pr.proposal_id}',${pr.lock_version||1})">unknown</button>
+      <button onclick="act('editorial','${pr.proposal_id}',${pr.lock_version||1})">editorial</button>
+      <button onclick="flag('${pr.proposal_id}',${pr.lock_version||1})">flag</button>
+      <button onclick="hl(${pr.start_offset},${pr.end_offset})">highlight span</button>`;
+    box.appendChild(d);
+  });
+}
+function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function hl(a,b){
+  const text=RAW;
+  const before=text.slice(0,a), mid=text.slice(a,b), after=text.slice(b);
+  document.getElementById('raw').innerHTML=escapeHtml(before)+'<mark>'+escapeHtml(mid)+'</mark>'+escapeHtml(after);
+}
+async function act(kind,id,ver){
+  const res=await fetch('/api/proposals/'+kind,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:id,reason:kind,expected_version:ver})});
+  if(res.status===409){alert('conflict: reload');}
+  load();
+}
+async function flag(id,ver){
+  const note=prompt('flag note')||'';
+  await fetch('/api/proposals/flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:id,reason:note,expected_version:ver,flag:'other'})});
+  load();
+}
+function nav(d){const el=document.getElementById('page'); el.value=Number(el.value)+d; load();}
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  if(e.key==='ArrowLeft') nav(-1);
+  if(e.key==='ArrowRight') nav(1);
+});
+load();
+</script>
+</body>
+</html>

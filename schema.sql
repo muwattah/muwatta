@@ -347,3 +347,28 @@ CREATE INDEX IF NOT EXISTS idx_segprop_status ON segmentation_proposals(proposal
 CREATE UNIQUE INDEX IF NOT EXISTS idx_segprop_hash
     ON segmentation_proposals(content_hash)
     WHERE content_hash IS NOT NULL AND proposal_status != 'superseded';
+
+CREATE TABLE IF NOT EXISTS proposal_flags (
+    flag_id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL REFERENCES segmentation_proposals(proposal_id),
+    flag TEXT NOT NULL CHECK (flag IN (
+        'ocr_suspect','editorial_uncertain','boundary_uncertain','type_uncertain',
+        'needs_source_check','possible_cross_page','other'
+    )),
+    note TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_propflags_proposal ON proposal_flags(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_propflags_flag ON proposal_flags(flag);
+
+CREATE TABLE IF NOT EXISTS proposal_links (
+    link_id TEXT PRIMARY KEY,
+    from_proposal_id TEXT NOT NULL REFERENCES segmentation_proposals(proposal_id),
+    to_proposal_id TEXT NOT NULL REFERENCES segmentation_proposals(proposal_id),
+    link_type TEXT NOT NULL CHECK (link_type IN ('continues_to','merge_source')),
+    confirmed INTEGER NOT NULL DEFAULT 0 CHECK (confirmed IN (0,1)),
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(from_proposal_id, to_proposal_id, link_type)
+);

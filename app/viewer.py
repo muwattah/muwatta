@@ -303,6 +303,9 @@ class ProposalAction(BaseModel):
     new_type: Optional[str] = None
     cut_offset: Optional[int] = None
     proposal_ids: Optional[list[str]] = None
+    expected_version: Optional[int] = None
+    flag: Optional[str] = None
+    to_proposal_id: Optional[str] = None
 
 
 @app.get("/proposals", response_class=HTMLResponse)
@@ -358,8 +361,11 @@ def api_list_proposals(volume: int = 1, pdf_page: int = Query(..., ge=1)):
 def api_pr_accept(body: ProposalAction):
     from app.proposals import accept_proposal
     try:
-        return accept_proposal(body.proposal_id, body.user_id, body.reason)
+        return accept_proposal(body.proposal_id, body.user_id, body.reason, expected_version=body.expected_version)
     except Exception as e:
+        from app.proposals import ConflictError
+        if isinstance(e, ConflictError):
+            raise HTTPException(409, str(e))
         raise HTTPException(400, str(e))
 
 
@@ -438,3 +444,53 @@ def api_pr_materialize(body: ProposalAction):
         return materialize_accepted_proposal(body.proposal_id, body.user_id, body.reason)
     except Exception as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/review", response_class=HTMLResponse)
+def review_workstation():
+    path = ROOT / "admin_static" / "review_workstation.html"
+    if not path.exists():
+        raise HTTPException(404, "review_workstation.html missing")
+    return HTMLResponse(path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/review/page")
+def api_review_page(volume: int = 1, pdf_page: int = Query(..., ge=1), ocr_role: str = "original", ocr_run_id: str | None = None):
+    from app.review_workstation import page_bundle
+    try:
+        return page_bundle(volume, pdf_page, ocr_run_id=ocr_run_id, ocr_role=ocr_role)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/review/progress")
+def api_review_progress():
+    from app.review_workstation import progress_report
+    return progress_report()
+
+
+@app.get("/api/proposals/{proposal_id}/audit")
+def api_proposal_audit(proposal_id: str):
+    return get_audit_history("segmentation_proposal", proposal_id)
+
+
+@app.post("/api/proposals/link")
+def api_proposal_link(body: ProposalAction):
+    from app.review_workstation import link_continues_to
+    if not body.to_proposal_id:
+        raise HTTPException(400, "to_proposal_id required")
+    try:
+        return link_continues_to(body.proposal_id, body.to_proposal_id, body.user_id)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/scan/{volume}/{pdf_page}")
+def api_scan(volume: int, pdf_page: int):
+    try:
+        path = extract_page_image(volume, pdf_page, dpi=110)
+    except Exception:
+        raise HTTPException(404, "scan not available")
+    if not path or not Path(path).exists():
+        raise HTTPException(404, "scan not available")
+    return FileResponse(path)
