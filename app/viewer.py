@@ -294,3 +294,136 @@ def api_stats():
                 "SELECT COUNT(*) FROM verification_tasks WHERE status='open'"
             ).fetchone()[0],
         }
+
+
+class ProposalAction(BaseModel):
+    proposal_id: str
+    user_id: str = "reviewer"
+    reason: str = ""
+    new_type: Optional[str] = None
+    cut_offset: Optional[int] = None
+    proposal_ids: Optional[list[str]] = None
+
+
+@app.get("/proposals", response_class=HTMLResponse)
+def proposals_ui():
+    path = ROOT / "admin_static" / "proposals.html"
+    if not path.exists():
+        raise HTTPException(404, "proposals.html missing")
+    return HTMLResponse(path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/proposals")
+def api_list_proposals(volume: int = 1, pdf_page: int = Query(..., ge=1)):
+    from app.proposals import ensure_proposal_schema
+    ensure_proposal_schema()
+    with get_conn(readonly=True) as conn:
+        page = conn.execute(
+            """
+            SELECT sp.source_page_id, v.volume_number, sp.pdf_page_number, sp.verification_status
+            FROM source_pages sp JOIN volumes v ON v.volume_id = sp.volume_id
+            WHERE v.volume_number=? AND sp.pdf_page_number=?
+            """,
+            (volume, pdf_page),
+        ).fetchone()
+        if not page:
+            raise HTTPException(404, "page not found")
+        ocr = conn.execute(
+            "SELECT ocr_run_id, ocr_output_raw FROM ocr_runs WHERE source_page_id=? ORDER BY ocr_timestamp DESC LIMIT 1",
+            (page["source_page_id"],),
+        ).fetchone()
+        props = conn.execute(
+            "SELECT * FROM segmentation_proposals WHERE source_page_id=? ORDER BY start_offset",
+            (page["source_page_id"],),
+        ).fetchall()
+        return {
+            "page": dict(page),
+            "ocr": dict(ocr) if ocr else None,
+            "proposals": [dict(r) for r in props],
+        }
+
+
+@app.post("/api/proposals/accept")
+def api_pr_accept(body: ProposalAction):
+    from app.proposals import accept_proposal
+    try:
+        return accept_proposal(body.proposal_id, body.user_id, body.reason)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/proposals/reject")
+def api_pr_reject(body: ProposalAction):
+    from app.proposals import reject_proposal
+    try:
+        return reject_proposal(body.proposal_id, body.user_id, body.reason)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/proposals/reclassify")
+def api_pr_reclass(body: ProposalAction):
+    from app.proposals import reclassify_proposal
+    if not body.new_type:
+        raise HTTPException(400, "new_type required")
+    try:
+        return reclassify_proposal(body.proposal_id, body.new_type, body.user_id, body.reason)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/proposals/unknown")
+def api_pr_unknown(body: ProposalAction):
+    from app.proposals import mark_unknown
+    try:
+        return mark_unknown(body.proposal_id, body.user_id, body.reason)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/proposals/editorial")
+def api_pr_editorial(body: ProposalAction):
+    from app.proposals import mark_editorial
+    try:
+        return mark_editorial(body.proposal_id, body.user_id, body.reason)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/proposals/flag")
+def api_pr_flag(body: ProposalAction):
+    from app.proposals import flag_proposal
+    try:
+        return flag_proposal(body.proposal_id, body.user_id, body.reason or "flag")
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/proposals/split")
+def api_pr_split(body: ProposalAction):
+    from app.proposals import split_proposal
+    if body.cut_offset is None:
+        raise HTTPException(400, "cut_offset required")
+    try:
+        return split_proposal(body.proposal_id, body.cut_offset, body.user_id, body.reason)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/proposals/merge")
+def api_pr_merge(body: ProposalAction):
+    from app.proposals import merge_proposals
+    ids = body.proposal_ids or []
+    try:
+        return merge_proposals(ids, body.user_id, body.reason)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/proposals/materialize")
+def api_pr_materialize(body: ProposalAction):
+    from app.proposals import materialize_accepted_proposal
+    try:
+        return materialize_accepted_proposal(body.proposal_id, body.user_id, body.reason)
+    except Exception as e:
+        raise HTTPException(400, str(e))

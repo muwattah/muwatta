@@ -41,6 +41,19 @@ def _ar_to_int(s: str) -> Optional[int]:
 
 
 def propose_structure_from_ocr(ocr_text: str, source_page_id: str) -> dict:
+    """Compatibility wrapper. Prefer app.proposals.detect_proposals."""
+    from .proposals import detect_proposals, summarize_hits
+    hits = detect_proposals(ocr_text or "")
+    return {
+        "source_page_id": source_page_id,
+        "hits": hits,
+        "summary": summarize_hits(hits),
+        "segmentation_status": "needs_review",
+        "flags": ["proposal_only", "not_canonical"],
+    }
+
+
+def propose_structure_from_ocr_legacy(ocr_text: str, source_page_id: str) -> dict:
     """
     Produce proposed segments from one page OCR.
     Everything is marked needs_review.

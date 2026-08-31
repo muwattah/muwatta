@@ -304,3 +304,45 @@ CREATE TABLE IF NOT EXISTS text_unit_source_pages (
 
 -- is_test column added via ALTER on text_units, books, chapters (0=production, 1=test)
 -- Production queries MUST filter is_test = 0
+
+-- ---------------------------------------------------------------------------
+-- 12. SEGMENTATION PROPOSALS (machine suggestions only; never canonical)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS segmentation_proposals (
+    proposal_id         TEXT PRIMARY KEY,
+    source_page_id      TEXT NOT NULL REFERENCES source_pages(source_page_id),
+    ocr_run_id          TEXT REFERENCES ocr_runs(ocr_run_id),
+    start_offset        INTEGER,
+    end_offset          INTEGER,
+    raw_excerpt         TEXT,
+    proposed_type       TEXT NOT NULL
+                            CHECK (proposed_type IN (
+                                'book_heading','chapter_heading','hadith','athar',
+                                'editorial_note','footnote','page_header','page_number',
+                                'unknown','editorial_candidate'
+                            )),
+    confidence          REAL NOT NULL DEFAULT 0.0,
+    reason              TEXT,
+    evidence            TEXT,
+    proposal_status     TEXT NOT NULL DEFAULT 'needs_review'
+                            CHECK (proposal_status IN (
+                                'needs_review','accepted','rejected','superseded'
+                            )),
+    generator           TEXT NOT NULL DEFAULT 'regex_v1',
+    generator_version   TEXT NOT NULL DEFAULT '1',
+    content_hash        TEXT,
+    parent_proposal_id  TEXT REFERENCES segmentation_proposals(proposal_id),
+    continues_to_page_id TEXT REFERENCES source_pages(source_page_id),
+    materialized_text_id TEXT REFERENCES text_units(text_id),
+    reviewed_by         TEXT,
+    reviewed_at         TEXT,
+    review_reason       TEXT,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_segprop_page ON segmentation_proposals(source_page_id);
+CREATE INDEX IF NOT EXISTS idx_segprop_status ON segmentation_proposals(proposal_status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_segprop_hash
+    ON segmentation_proposals(content_hash)
+    WHERE content_hash IS NOT NULL AND proposal_status != 'superseded';

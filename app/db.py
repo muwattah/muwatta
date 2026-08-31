@@ -153,6 +153,8 @@ def init_db(*, force: bool = False) -> str:
     state = restore_snapshot_if_needed()
     if db_has_schema() and not force:
         ensure_review_columns()
+        from app.proposals import ensure_proposal_schema
+        ensure_proposal_schema()
         return "exists" if state != "restored" else "restored"
     if (DB_PATH.exists() and DB_PATH.stat().st_size > 0) and not force:
         raise RuntimeError(f"Database file exists but has no schema: {DB_PATH}. Refusing to overwrite.")
@@ -168,6 +170,8 @@ def init_db(*, force: bool = False) -> str:
         conn.close()
     persist_snapshot()
     ensure_review_columns()
+    from app.proposals import ensure_proposal_schema
+    ensure_proposal_schema()
     return "created"
 
 
