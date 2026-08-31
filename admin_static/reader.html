@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<title>Al-Muwaṭṭaʾ reader</title>
+<style>
+  body{margin:0;background:#f7f4ef;color:#1a1a1a;font-family:"Noto Naskh Arabic",serif;}
+  header{background:#2c2416;color:#f3ead2;padding:12px 16px;}
+  .badge{display:inline-block;background:#8a1c1c;color:#fff;padding:2px 6px;font-size:12px;margin-left:6px;}
+  .editorial{opacity:.85;border-right:4px solid #888;padding-right:8px;font-size:.95em;}
+  article{max-width:820px;margin:16px auto;font-size:22px;line-height:2;}
+  .prov{font-size:13px;color:#555;}
+  .unverified{outline:2px dashed #8a1c1c;padding:8px;}
+</style>
+</head>
+<body>
+<header>
+  <div>الموطأ — رواية يحيى بن يحيى الليثي — تحقيق بشار عواد معروف</div>
+  <div>
+    <label>preview <input type="checkbox" id="preview" onchange="load()"></label>
+    <span id="mode"></span>
+  </div>
+</header>
+<main id="main"></main>
+<script>
+async function load(){
+  const preview=document.getElementById('preview').checked;
+  const r=await fetch('/api/reader?volume=1&preview='+(preview?1:0));
+  const data=await r.json();
+  document.getElementById('mode').textContent = preview ? 'ADMIN PREVIEW — UNVERIFIED possible' : 'public: verified only';
+  const m=document.getElementById('main'); m.innerHTML='';
+  if(!data.units.length){
+    m.innerHTML='<p>Nog geen verified tekst. Review p33–42, materialize, daarna expliciet verify.</p>';
+    return;
+  }
+  data.units.forEach(u=>{
+    const art=document.createElement('article');
+    if(u.badge) art.className='unverified';
+    if((u.text_type||'')==='editorial') art.classList.add('editorial');
+    const ar=u.visible_arabic || '';
+    art.innerHTML=`${u.badge?`<span class="badge">${u.badge}</span>`:''}
+      <div>${escapeHtml(ar)}</div>
+      <div class="prov">${u.text_type||''} · pdf ${u.pdf_page||'?'} · printed ${u.printed_page==null?'niet bevestigd':u.printed_page} · hadith ${u.hadith_number||'geen nummer'}</div>`;
+    m.appendChild(art);
+  });
+}
+function escapeHtml(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+load();
+</script>
+</body>
+</html>

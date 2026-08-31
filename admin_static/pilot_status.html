@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Pilot p33–42</title>
+<style>body{font-family:sans-serif;background:#111;color:#eee;padding:16px} td,th{padding:4px 8px}</style>
+</head>
+<body>
+<h1>Pilot Volume 1 PDF 33–42</h1>
+<pre id="out"></pre>
+<p><a href="/review">Review workstation</a> · <a href="/reader">Reader</a> · <a href="/reader?preview=1">Preview</a></p>
+<script>
+fetch('/api/pilot/status').then(r=>r.json()).then(d=>{
+  document.getElementById('out').textContent=JSON.stringify(d,null,2);
+});
+</script>
+</body></html>

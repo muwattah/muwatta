@@ -494,3 +494,27 @@ def api_scan(volume: int, pdf_page: int):
     if not path or not Path(path).exists():
         raise HTTPException(404, "scan not available")
     return FileResponse(path)
+
+
+@app.get("/reader", response_class=HTMLResponse)
+def reader_page():
+    path = ROOT / "admin_static" / "reader.html"
+    return HTMLResponse(path.read_text(encoding="utf-8"))
+
+
+@app.get("/pilot", response_class=HTMLResponse)
+def pilot_page():
+    path = ROOT / "admin_static" / "pilot_status.html"
+    return HTMLResponse(path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/reader")
+def api_reader(volume: int = 1, preview: int = 0):
+    from app.reader import reader_tree
+    return reader_tree(preview=bool(preview), volume=volume)
+
+
+@app.get("/api/pilot/status")
+def api_pilot_status():
+    from app.reader import pilot_status
+    return pilot_status(1, range(33, 43))
