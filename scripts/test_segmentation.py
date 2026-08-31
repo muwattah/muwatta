@@ -30,6 +30,8 @@ from app.proposals import (  # noqa: E402
     merge_proposals,
     materialize_accepted_proposal,
     ensure_proposal_schema,
+    select_ocr_run,
+    accept_proposal as accp,
 )
 
 
@@ -175,6 +177,37 @@ def main() -> int:
     results.append(check("17 invalid materialize raises", rolled))
 
     results.append(check("18 persistence paths isolated to temp", str(dbmod.DB_PATH).startswith(str(TMP))))
+
+    from app.proposals import select_ocr_run
+    # multi-run: original vs review
+    with get_conn() as c:
+        c.execute(
+            """INSERT INTO ocr_runs (ocr_run_id, source_page_id, ocr_engine, ocr_model, ocr_output_raw, storage_path, ocr_timestamp)
+               VALUES ('ocr-review-fixture','pg-ed-bashshar-1997-v1-p0099','tesseract','ara','REVIEWTEXT','storage/ocr_review/vol1/p0099.json','2099-01-01')"""
+        )
+    orig = select_ocr_run('pg-ed-bashshar-1997-v1-p0099', role='original')
+    results.append(check("multi-run default original not review", not str(orig['ocr_run_id']).startswith('ocr-review-')))
+    bad = False
+    try:
+        accept_proposal(mg["merged_id"], user_id="t")  # already accepted/materialized ok?
+        reject_proposal("no-such")
+    except ValueError:
+        bad = True
+    results.append(check("invalid proposal id raises", bad))
+    # rejected cannot accept
+    with get_conn() as c:
+        pidr = new_id('prp-')
+        c.execute(
+            """INSERT INTO segmentation_proposals (proposal_id, source_page_id, ocr_run_id, start_offset, end_offset, raw_excerpt, proposed_type, confidence, proposal_status)
+               VALUES (?, 'pg-ed-bashshar-1997-v1-p0099', ?, 0, 1, 'A', 'unknown', 0.1, 'rejected')""",
+            (pidr, orig['ocr_run_id']),
+        )
+    blocked = False
+    try:
+        accept_proposal(pidr, user_id='t')
+    except ValueError:
+        blocked = True
+    results.append(check("rejected cannot accept directly", blocked))
 
     passed = sum(1 for x in results if x)
     print(f"\n=== SEGMENTATION RESULT: {passed}/{len(results)} PASS ===")

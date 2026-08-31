@@ -315,8 +315,6 @@ def proposals_ui():
 
 @app.get("/api/proposals")
 def api_list_proposals(volume: int = 1, pdf_page: int = Query(..., ge=1)):
-    from app.proposals import ensure_proposal_schema
-    ensure_proposal_schema()
     with get_conn(readonly=True) as conn:
         page = conn.execute(
             """
@@ -328,18 +326,31 @@ def api_list_proposals(volume: int = 1, pdf_page: int = Query(..., ge=1)):
         ).fetchone()
         if not page:
             raise HTTPException(404, "page not found")
-        ocr = conn.execute(
-            "SELECT ocr_run_id, ocr_output_raw FROM ocr_runs WHERE source_page_id=? ORDER BY ocr_timestamp DESC LIMIT 1",
+        runs = [dict(r) for r in conn.execute(
+            "SELECT ocr_run_id, ocr_engine, ocr_timestamp, storage_path, length(ocr_output_raw) AS chars FROM ocr_runs WHERE source_page_id=? ORDER BY ocr_timestamp ASC",
             (page["source_page_id"],),
+        ).fetchall()]
+        has = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='segmentation_proposals'"
         ).fetchone()
-        props = conn.execute(
-            "SELECT * FROM segmentation_proposals WHERE source_page_id=? ORDER BY start_offset",
-            (page["source_page_id"],),
-        ).fetchall()
+        props = []
+        if has:
+            props = [dict(r) for r in conn.execute(
+                "SELECT * FROM segmentation_proposals WHERE source_page_id=? ORDER BY start_offset",
+                (page["source_page_id"],),
+            ).fetchall()]
+        original = next((r for r in runs if not str(r.get("ocr_run_id","")).startswith("ocr-review-")), runs[0] if runs else None)
+        raw = None
+        if original:
+            raw_row = conn.execute("SELECT ocr_output_raw FROM ocr_runs WHERE ocr_run_id=?", (original["ocr_run_id"],)).fetchone()
+            raw = raw_row["ocr_output_raw"] if raw_row else None
         return {
             "page": dict(page),
-            "ocr": dict(ocr) if ocr else None,
-            "proposals": [dict(r) for r in props],
+            "ocr_runs": runs,
+            "ocr_used": original,
+            "ocr": {"ocr_run_id": original["ocr_run_id"], "ocr_output_raw": raw} if original else None,
+            "proposals": props,
+            "note": "Raw OCR below is the original run unless review is chosen explicitly. Detector score is not source reliability. Accepted is not verified.",
         }
 
 

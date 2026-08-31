@@ -36,7 +36,55 @@ RE_PAGE_NUM = re.compile(r"^\s*[٠-٩0-9]{1,4}\s*$")
 RE_HADITH_OPEN = re.compile(r"(حدّ?ثني|حدّ?ثنا|أخبرنا)")
 
 
+def proposal_table_exists() -> bool:
+    with get_conn(readonly=True) as conn:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='segmentation_proposals'"
+        ).fetchone()
+        return row is not None
+
+
+def select_ocr_run(source_page_id: str, *, ocr_run_id: str | None = None, role: str = "original"):
+    """Never silently pick review-OCR as canonical detector input."""
+    with get_conn(readonly=True) as conn:
+        if ocr_run_id:
+            row = conn.execute(
+                "SELECT * FROM ocr_runs WHERE ocr_run_id=? AND source_page_id=?",
+                (ocr_run_id, source_page_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("ocr_run_id not found on this page")
+            return dict(row)
+        rows = list(conn.execute(
+            "SELECT * FROM ocr_runs WHERE source_page_id=? ORDER BY ocr_timestamp ASC",
+            (source_page_id,),
+        ))
+        if not rows:
+            raise ValueError("no OCR runs for page")
+        def is_review(r):
+            rid = r["ocr_run_id"] or ""
+            path = (r["storage_path"] or "").replace("\\", "/")
+            return rid.startswith("ocr-review-") or "/ocr_review/" in path or path.startswith("storage/ocr_review")
+        originals = [r for r in rows if not is_review(r)]
+        reviews = [r for r in rows if is_review(r)]
+        if role == "review":
+            if not reviews:
+                raise ValueError("no review OCR run on this page; pass --ocr-run-id")
+            if len(reviews) > 1:
+                raise ValueError("multiple review OCR runs; pass --ocr-run-id")
+            return dict(reviews[0])
+        if role != "original":
+            raise ValueError("role must be original or review")
+        if not originals:
+            raise ValueError("no original OCR run; pass --ocr-run-id to use a specific run")
+        if len(originals) > 1:
+            # stable: earliest original timestamp, never latest-wins
+            return dict(originals[0])
+        return dict(originals[0])
+
+
 def ensure_proposal_schema() -> None:
+    """Additive migration only. Never drops or resets existing rows."""
     ensure_review_columns()
     with get_conn() as conn:
         conn.execute(
@@ -69,6 +117,12 @@ def ensure_proposal_schema() -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_segprop_page ON segmentation_proposals(source_page_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_segprop_run ON segmentation_proposals(ocr_run_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_segprop_status ON segmentation_proposals(proposal_status)"
         )
 
 
@@ -216,6 +270,12 @@ def _set_status(proposal_id: str, status: str, user_id: str, reason: str, extra:
     with get_conn() as conn:
         row = _get(conn, proposal_id)
         old = dict(row)
+        if old["proposal_status"] == "superseded" and status != "superseded":
+            raise ValueError("superseded proposal cannot change status")
+        if old["proposal_status"] == "rejected" and status == "accepted":
+            raise ValueError("rejected proposal cannot be accepted directly; reclassify first")
+        if old["materialized_text_id"] and extra.get("proposed_type"):
+            raise ValueError("cannot reclassify a materialized proposal")
         fields = ["proposal_status = ?", "reviewed_by = ?", "reviewed_at = ?", "review_reason = ?", "updated_at = ?"]
         params = [status, user_id, utcnow(), reason, utcnow()]
         if "proposed_type" in extra:

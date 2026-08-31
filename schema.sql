@@ -342,6 +342,7 @@ CREATE TABLE IF NOT EXISTS segmentation_proposals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_segprop_page ON segmentation_proposals(source_page_id);
+CREATE INDEX IF NOT EXISTS idx_segprop_run ON segmentation_proposals(ocr_run_id);
 CREATE INDEX IF NOT EXISTS idx_segprop_status ON segmentation_proposals(proposal_status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_segprop_hash
     ON segmentation_proposals(content_hash)
